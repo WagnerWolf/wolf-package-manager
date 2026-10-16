@@ -26,7 +26,7 @@ from .worker import CheckWorker, SearchWorker
 from .search_service import invalidate_search_cache
 
 ASSETS = Path(__file__).resolve().parent / 'assets'
-VERSION = '0.3.1'
+VERSION = '0.3.2'
 STYLE = '''
 QWidget {background:#121a25;color:#e8eff7;font-size:13px;}
 QFrame#sidebar {background:#172231;border-right:1px solid #304058;}
@@ -351,15 +351,20 @@ class Manager(QMainWindow):
             for col,value in enumerate((p.source,p.name,p.installed,p.available)):
                 self.table.setItem(row,col,QTableWidgetItem(value))
         counts={s:len(result.get(s,[])) for s in ('Repositório','AUR')}
-        self.repo_count.setText('Repositórios: '+(str(counts['Repositório']) if 'Repositório' not in errors else 'Erro'))
-        self.aur_count.setText('AUR: '+(str(counts['AUR']) if 'AUR' not in errors else 'Erro'))
+        self.repo_count.setText('Repositórios: '+(
+            'Erro' if 'Repositório' in errors else str(counts['Repositório']) if 'Repositório' in result else '—'))
+        self.aur_count.setText('AUR: '+(
+            'Erro' if 'AUR' in errors else str(counts['AUR']) if 'AUR' in result else '—'))
         now=datetime.now().strftime('%d/%m/%Y %H:%M')
         total=len(self.updates)
-        self.sidebar_status.setText(f'Última consulta: {now}\nAtualizações: {total}')
+        self.sidebar_status.setText(
+            f'Última consulta: {now}\n' + (f'Encontradas: {total} (consulta parcial)' if errors else f'Atualizações: {total}'))
         self._set_actions_enabled(True)
         if errors:
-            self.summary.setText('Consulta parcial: '+' | '.join(f'{k}: {v}' for k,v in errors.items()))
+            self.summary.setText('Consulta incompleta: '+' | '.join(f'{k}: {v}' for k,v in errors.items()))
             self.tray.setIcon(tray_icon('error'))
+            if 'Transação' in errors:
+                QTimer.singleShot(60_000, self.check_updates)
         else:
             self.summary.setText(f'{total} atualização(ões) encontrada(s) — {now}')
             self.tray.setIcon(tray_icon('updates' if total else 'ok'))

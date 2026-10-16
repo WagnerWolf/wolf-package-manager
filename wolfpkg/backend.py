@@ -95,12 +95,31 @@ def _query(argv: list[str], timeout: int) -> subprocess.CompletedProcess:
 
 
 def check_repository_updates() -> list[Update]:
+    """Consulta base isolada e detecta divergência com a base local do pacman.
+
+    Não executa `pacman -Sy`: atualizar apenas o índice principal causaria
+    risco de partial upgrade no Arch. Uma divergência é reportada como erro,
+    nunca como falso "nenhuma atualização".
+    """
     result = _query(['checkupdates', '--nocolor'], 120)
-    if result.returncode == 2 and not result.stdout.strip():
-        return []
-    if result.returncode != 0:
+    if result.returncode not in (0, 2) or (result.returncode == 2 and result.stdout.strip()):
         raise CheckError(f'checkupdates retornou {result.returncode}: {result.stderr.strip() or result.stdout.strip()}')
-    return parse_updates(result.stdout, 'Repositório')
+    found = parse_updates(result.stdout, 'Repositório')
+    if found:
+        return found
+    # Uma base temporária sem novidades pode divergir da base local que
+    # `pacman -Syu` atualizou recentemente. Nessa condição, não afirmar zero.
+    local = _query(['pacman', '-Qu'], 20)
+    if local.returncode not in (0, 1):
+        raise CheckError('Não foi possível conferir a base local do pacman: '
+                         + (local.stderr.strip() or f'código {local.returncode}'))
+    pending_local = parse_updates(local.stdout, 'Repositório')
+    if pending_local:
+        names = ', '.join(item.name for item in pending_local[:5])
+        raise CheckError('Bases de atualizações divergentes: checkupdates não encontrou pacotes, '
+                         f'mas pacman -Qu lista {len(pending_local)} ({names}). '
+                         'Tente verificar novamente e confira seus espelhos.')
+    return []
 
 
 def check_aur_updates() -> list[Update]:
@@ -110,6 +129,42 @@ def check_aur_updates() -> list[Update]:
             return []
         raise CheckError(f'yay retornou {result.returncode}: {result.stderr.strip() or result.stdout.strip()}')
     return parse_updates(result.stdout, 'AUR')
+
+
+def transaction_snapshot(log: Path = Path('/var/log/pacman.log'),
+                         lock: Path = Path('/var/lib/pacman/db.lck')) -> tuple[bool, int | None, int | None]:
+    """Instantâneo sem escrita. Detecta atualizações externas durante a consulta.
+
+    Não substitui as travas de transação do pacman; apenas evita divulgar
+    resultados coletados antes de uma instalação executada em outro terminal.
+    """
+    locked = lock.exists()
+    try:
+        st = log.stat()
+        return locked, st.st_mtime_ns, st.st_size
+    except OSError:
+        return locked, None, None
+
+
+def check_all_updates(*,
+                      snapshot=transaction_snapshot,
+                      repo_check=check_repository_updates,
+                      aur_check=check_aur_updates) -> tuple[dict[str, list[Update]], dict[str, str]]:
+    before = snapshot()
+    if before[0]:
+        return {}, {'Transação': 'Pacman em uso (db.lck presente). Verificação adiada.'}
+    result: dict[str, list[Update]] = {}
+    errors: dict[str, str] = {}
+    for key, callback in (('Repositório', repo_check), ('AUR', aur_check)):
+        try:
+            result[key] = callback()
+        except Exception as exc:
+            errors[key] = str(exc)
+    after = snapshot()
+    if after[0] or after != before:
+        return {}, {'Transação': 'O estado do pacman mudou durante a consulta. '
+                                 'Resultados descartados para evitar notificação antiga.'}
+    return result, errors
 
 
 def validate_package(package: Package) -> None:

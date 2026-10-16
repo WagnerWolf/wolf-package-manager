@@ -1,6 +1,6 @@
-# Wolf Package Manager 0.3.1
+# Wolf Package Manager 0.3.2
 
-Protótipo independente do **Wolf Linux 2.0.0**, em PySide6, com pacman + yay, verificação periódica e bandeja KDE.
+Protótipo de atualização do **Wolf Linux**, em PySide6, com pacman + yay, verificação periódica e bandeja KDE.
 
 ## Instalação (usuário comum)
 
@@ -47,3 +47,15 @@ bash -n iniciar.sh install-local.sh uninstall-local.sh wolfpkg/askpass.sh
 ```
 
 A aplicação Qt e as transações reais ainda precisam ser validadas no KDE. O DevKit oficial 2.0.0 não foi alterado.
+
+## Verificação consistente de atualizações (0.3.2)
+
+- Continua usando `checkupdates --nocolor` (banco temporário separado, sem sincronizar `/var/lib/pacman/sync`); **não** executa `pacman -Sy` para verificação.
+- Quando a base isolada retorna zero, consulta também `pacman -Qu` para detectar divergência com o índice local, mostrando aviso em vez de "nenhuma atualização". Uma divergência não prova qual base está correta; confira os mirrors.
+- Se `db.lck` estiver presente ou `/var/log/pacman.log` mudar durante a consulta (por exemplo, `sudo pacman -Syu` foi iniciado em outro terminal), descarta os resultados como potencialmente obsoletos. Tenta novamente depois de 60 segundos.
+- A interface diferencia consulta parcial/adiada de ausência real de atualizações. Uma notificação antiga não deve ser mostrada após atualização concorrente detectável.
+- Limitação: nenhum cliente pode garantir que não surgirá atualização entre a consulta e uma posterior atualização; `pacman -Syu` permanece a autoridade para aplicar atualizações.
+
+## Baloo KDE
+
+Os crashes de `baloo_file_extractor` devem ser investigados separadamente: nos logs do usuário o Qt não encontrou o socket Wayland e falhou também com o fallback XCB. Esse problema não é causado por uma consulta `checkupdates` e não é corrigido pelo aplicativo.

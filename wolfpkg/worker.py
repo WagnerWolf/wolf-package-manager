@@ -1,16 +1,11 @@
 from PySide6.QtCore import QThread, Signal
-from .backend import CheckError, check_repository_updates, check_aur_updates
+from .backend import check_all_updates
 from .search_service import search_parallel
 
 class CheckWorker(QThread):
     done = Signal(object, object)
     def run(self):
-        results, errors = {}, {}
-        for key, fn in [('Repositório', check_repository_updates), ('AUR', check_aur_updates)]:
-            try:
-                results[key] = fn()
-            except Exception as exc:
-                errors[key] = str(exc)
+        results, errors = check_all_updates()
         self.done.emit(results, errors)
 
 class SearchWorker(QThread):

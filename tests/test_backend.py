@@ -87,8 +87,10 @@ chaotic-aur/something 1.2-2
             b.installation_commands(b.Package('AUR','evil','hello','1',''))
     @patch('wolfpkg.backend._query')
     def test_checkupdates_code_2_none(self,q):
-        q.return_value=subprocess.CompletedProcess([],2,'','')
+        q.side_effect=[subprocess.CompletedProcess([],2,'',''),
+                       subprocess.CompletedProcess([],0,'','')]
         self.assertEqual(b.check_repository_updates(),[])
+        self.assertEqual(q.call_count,2)
     @patch('wolfpkg.backend._query')
     def test_aur_updates_error(self,q):
         q.return_value=subprocess.CompletedProcess([],1,'','timeout')
